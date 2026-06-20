@@ -1,6 +1,6 @@
 {
   "name": "@somni/chat-core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Framework-agnostic core engine for Somni Chat",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -22,6 +22,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --experimental-loader ./tests/loader.mjs --test tests/*.test.ts",
+    "test:watch": "node --experimental-strip-types --experimental-loader ./tests/loader.mjs --test --watch tests/*.test.ts",
     "clean": "rm -rf dist"
   },
   "devDependencies": {

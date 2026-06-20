@@ -1,0 +1,73 @@
+{
+  "name": "@somni/chat",
+  "version": "1.0.0",
+  "description": "Universal, framework-agnostic realtime messaging engine. One install, any backend.",
+  "license": "MIT",
+  "keywords": [
+    "chat",
+    "messaging",
+    "realtime",
+    "websocket",
+    "supabase",
+    "appwrite",
+    "firebase",
+    "react",
+    "typescript",
+    "offline-first"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.mjs",
+      "require": "./dist/react.js",
+      "types": "./dist/react.d.ts"
+    },
+    "./adapters/supabase": {
+      "import": "./dist/adapters/supabase.mjs",
+      "require": "./dist/adapters/supabase.js",
+      "types": "./dist/adapters/supabase.d.ts"
+    },
+    "./adapters/appwrite": {
+      "import": "./dist/adapters/appwrite.mjs",
+      "require": "./dist/adapters/appwrite.js",
+      "types": "./dist/adapters/appwrite.d.ts"
+    },
+    "./adapters/firebase": {
+      "import": "./dist/adapters/firebase.mjs",
+      "require": "./dist/adapters/firebase.js",
+      "types": "./dist/adapters/firebase.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@somni/chat-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@somni/adapter-appwrite": "workspace:*",
+    "@somni/adapter-firebase": "workspace:*",
+    "@somni/adapter-supabase": "workspace:*",
+    "@somni/chat-react": "workspace:*",
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "@somni/chat-react": { "optional": true },
+    "@somni/adapter-supabase": { "optional": true },
+    "@somni/adapter-appwrite": { "optional": true },
+    "@somni/adapter-firebase": { "optional": true }
+  },
+  "sideEffects": false
+}

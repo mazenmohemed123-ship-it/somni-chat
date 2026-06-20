@@ -2,6 +2,20 @@
 
 > بنية تحتية شاملة للمراسلة الفورية — مثل WhatsApp / Discord / Slack / Intercom — لكنها مكتبة npm قابلة لإعادة الاستخدام في أي مشروع.
 
+**v1.0.0 — Production Hardened** · 54 اختبار يمر · تسليم exactly-once · offline-first · plugins
+
+### 📚 التوثيق
+- [Quick Start (5 أسطر)](./docs/quickstart.md)
+- [API Reference الكامل](./docs/api-reference.md)
+- [دليل كتابة Adapter](./docs/adapter-guide.md)
+- [أمثلة واقعية (marketplace / support / group / AI)](./docs/examples.md)
+- [Production Checklist + تقرير جاهزية npm](./docs/production-checklist.md)
+
+```bash
+# تشغيل الاختبارات (لا تحتاج أي تثبيت — Node 22+)
+npm --workspace @somni/chat-core test     # 54 passing
+```
+
 ---
 
 ## المبدأ الأساسي

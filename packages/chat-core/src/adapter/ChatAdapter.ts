@@ -9,6 +9,7 @@ import type {
   SendMessageInput,
   EditMessageInput,
   Reaction,
+  Attachment,
 } from '../types/message';
 import type { UserPresence, PresenceUpdate, TypingUpdate } from '../types/presence';
 import type { ChatEvent } from '../types/events';
@@ -59,6 +60,13 @@ export interface ChatAdapter {
   addReaction(messageId: string, userId: string, emoji: string): Promise<Reaction>;
   removeReaction(messageId: string, userId: string, emoji: string): Promise<void>;
 
+  // ─── Attachments ──────────────────────────────────────────────────────────
+  /**
+   * Uploads a file to the backend's storage and returns an Attachment record
+   * (without message_id, which the engine fills in on send).
+   */
+  uploadAttachment(input: UploadAttachmentInput): Promise<UploadAttachmentResult>;
+
   // ─── Presence ─────────────────────────────────────────────────────────────
   updatePresence(update: PresenceUpdate): Promise<void>;
   getPresence(userIds: string[]): Promise<UserPresence[]>;
@@ -92,4 +100,26 @@ export interface PaginatedResult<T> {
   next_cursor: string | null;
   has_more: boolean;
   total?: number;
+}
+
+export interface UploadAttachmentInput {
+  /** Raw file data — Blob/File in browser, Buffer/Uint8Array on server */
+  file: Blob | ArrayBuffer | Uint8Array;
+  file_name: string;
+  mime_type: string;
+  /** Optional bucket/folder hint for the storage backend */
+  bucket?: string;
+  onProgress?: (percent: number) => void;
+}
+
+export interface UploadAttachmentResult {
+  file_url: string;
+  file_name: string;
+  file_type: Attachment['file_type'];
+  mime_type: string;
+  file_size: number;
+  thumbnail_url?: string;
+  width?: number;
+  height?: number;
+  duration_seconds?: number;
 }

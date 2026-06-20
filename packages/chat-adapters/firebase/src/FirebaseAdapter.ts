@@ -19,12 +19,16 @@ import {
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
+import type { FirebaseStorage } from 'firebase/storage';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type {
   ChatAdapter,
   PaginationOptions,
   MessageQueryOptions,
   PaginatedResult,
   UnsubscribeFn,
+  UploadAttachmentInput,
+  UploadAttachmentResult,
   Conversation,
   CreateConversationInput,
   UpdateConversationInput,
@@ -34,6 +38,7 @@ import type {
   SendMessageInput,
   EditMessageInput,
   Reaction,
+  Attachment,
   UserPresence,
   PresenceUpdate,
   TypingUpdate,
@@ -42,6 +47,18 @@ import type {
 
 export interface FirebaseAdapterConfig {
   firestore: Firestore;
+  /** Required only if you call uploadAttachment() */
+  storage?: FirebaseStorage;
+  /** Storage path prefix for attachments (default: "chat-attachments") */
+  storagePrefix?: string;
+}
+
+function inferFileType(mime: string): Attachment['file_type'] {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('application/') || mime.startsWith('text/')) return 'document';
+  return 'other';
 }
 
 /**
@@ -50,10 +67,35 @@ export interface FirebaseAdapterConfig {
  */
 export class FirebaseAdapter implements ChatAdapter {
   private readonly fs: Firestore;
+  private readonly storage: FirebaseStorage | undefined;
+  private readonly storagePrefix: string;
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(config: FirebaseAdapterConfig) {
     this.fs = config.firestore;
+    this.storage = config.storage;
+    this.storagePrefix = config.storagePrefix ?? 'chat-attachments';
+  }
+
+  async uploadAttachment(input: UploadAttachmentInput): Promise<UploadAttachmentResult> {
+    if (!this.storage) {
+      throw new Error('[Firebase] uploadAttachment requires `storage` in FirebaseAdapterConfig');
+    }
+    const prefix = input.bucket ?? this.storagePrefix;
+    const path = `${prefix}/${Date.now()}-${input.file_name}`;
+    const ref = storageRef(this.storage, path);
+
+    const blob = input.file instanceof Blob ? input.file : new Blob([input.file as ArrayBuffer]);
+    await uploadBytes(ref, blob, { contentType: input.mime_type });
+    const url = await getDownloadURL(ref);
+
+    return {
+      file_url: url,
+      file_name: input.file_name,
+      file_type: inferFileType(input.mime_type),
+      mime_type: input.mime_type,
+      file_size: blob.size,
+    };
   }
 
   private col(name: string): CollectionReference<DocumentData> {

@@ -2,6 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnyMessage, ChatEvent } from '@somni/chat-core';
 import { useChatContext } from '../context/ChatContext';
 
+/**
+ * Server-consistent ordering: sort by created_at, breaking ties on id so the
+ * order is stable and identical across all clients (optimistic messages keep
+ * their client_id as id until reconciled, which preserves their slot).
+ */
+function sortMessages(messages: AnyMessage[]): AnyMessage[] {
+  return messages.slice().sort((a, b) => {
+    if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
 export interface UseMessagesOptions {
   conversationId: string;
   pageSize?: number;
@@ -78,21 +90,27 @@ export function useMessages({
 
         if (event.type === 'message:new') {
           setMessages((prev) => {
-            // Prevent duplicate by client_id
+            // Dedup by client_id OR server id (covers optimistic + echo).
             const exists = prev.some(
               (m) => m.client_id === event.payload.client_id || m.id === event.payload.id
             );
             if (exists) return prev;
-            return [...prev, event.payload];
+            return sortMessages([...prev, event.payload]);
           });
         } else if (event.type === 'message:updated') {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === event.payload.id || m.client_id === event.payload.client_id
-                ? event.payload
-                : m
-            )
-          );
+          setMessages((prev) => {
+            // Match the optimistic placeholder by client_id, else by server id.
+            const idx = prev.findIndex(
+              (m) => m.client_id === event.payload.client_id || m.id === event.payload.id
+            );
+            if (idx === -1) {
+              // Update for a message we don't have yet → insert (reconciliation safety).
+              return sortMessages([...prev, event.payload]);
+            }
+            const next = prev.slice();
+            next[idx] = event.payload;
+            return sortMessages(next);
+          });
         } else if (event.type === 'message:deleted') {
           setMessages((prev) => prev.filter((m) => m.id !== event.payload.id));
         }

@@ -1,6 +1,6 @@
 {
   "name": "@somni/chat-ui",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "UI components for Somni Chat Engine",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -13,7 +13,9 @@
     },
     "./styles": "./dist/styles.css"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup && cp src/styles/index.css dist/styles.css",
     "dev": "tsup --watch",
@@ -35,5 +37,7 @@
     "tsup": "^8.0.0",
     "typescript": "^5.4.0"
   },
-  "sideEffects": ["./dist/styles.css"]
+  "sideEffects": [
+    "./dist/styles.css"
+  ]
 }

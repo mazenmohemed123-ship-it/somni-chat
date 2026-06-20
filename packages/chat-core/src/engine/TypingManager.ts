@@ -8,12 +8,22 @@ export class TypingManager {
   private isCurrentlyTyping = false;
   private readonly unsubscribers = new Map<string, () => void>();
 
+  private readonly adapter: ChatAdapter;
+  private readonly emitter: ChatEventEmitter;
+  private readonly userId: string;
+  private readonly timeoutMs: number;
+
   constructor(
-    private readonly adapter: ChatAdapter,
-    private readonly emitter: ChatEventEmitter,
-    private readonly userId: string,
-    private readonly timeoutMs: number
-  ) {}
+    adapter: ChatAdapter,
+    emitter: ChatEventEmitter,
+    userId: string,
+    timeoutMs: number
+  ) {
+    this.adapter = adapter;
+    this.emitter = emitter;
+    this.userId = userId;
+    this.timeoutMs = timeoutMs;
+  }
 
   /** Call on every keystroke */
   async notifyTyping(conversationId: string): Promise<void> {

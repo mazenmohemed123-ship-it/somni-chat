@@ -1,4 +1,4 @@
-import type { Client, Databases, Realtime } from 'appwrite';
+import type { Client, Databases, Realtime, Storage } from 'appwrite';
 import { ID, Query, Permission, Role } from 'appwrite';
 import type {
   ChatAdapter,
@@ -6,6 +6,8 @@ import type {
   MessageQueryOptions,
   PaginatedResult,
   UnsubscribeFn,
+  UploadAttachmentInput,
+  UploadAttachmentResult,
   Conversation,
   CreateConversationInput,
   UpdateConversationInput,
@@ -15,6 +17,7 @@ import type {
   SendMessageInput,
   EditMessageInput,
   Reaction,
+  Attachment,
   UserPresence,
   PresenceUpdate,
   TypingUpdate,
@@ -25,6 +28,10 @@ export interface AppwriteAdapterConfig {
   client: Client;
   databases: Databases;
   realtime: Realtime;
+  /** Required only if you call uploadAttachment() */
+  storage?: Storage;
+  /** Storage bucket id for attachments */
+  storageBucketId?: string;
   databaseId: string;
   collections: {
     conversations: string;
@@ -34,6 +41,14 @@ export interface AppwriteAdapterConfig {
     reactions: string;
     presence: string;
   };
+}
+
+function inferFileType(mime: string): Attachment['file_type'] {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('application/') || mime.startsWith('text/')) return 'document';
+  return 'other';
 }
 
 /**
@@ -47,11 +62,36 @@ export class AppwriteAdapter implements ChatAdapter {
   private readonly col: AppwriteAdapterConfig['collections'];
   private readonly unsubscribers: Array<() => void> = [];
 
-  constructor(private readonly config: AppwriteAdapterConfig) {
+  private readonly storage: Storage | undefined;
+  private readonly storageBucketId: string;
+
+  constructor(config: AppwriteAdapterConfig) {
     this.db = config.databases;
     this.realtime = config.realtime;
     this.databaseId = config.databaseId;
     this.col = config.collections;
+    this.storage = config.storage;
+    this.storageBucketId = config.storageBucketId ?? 'chat-attachments';
+  }
+
+  async uploadAttachment(input: UploadAttachmentInput): Promise<UploadAttachmentResult> {
+    if (!this.storage) {
+      throw new Error('[Appwrite] uploadAttachment requires `storage` in AppwriteAdapterConfig');
+    }
+    const blob = input.file instanceof Blob ? input.file : new Blob([input.file as ArrayBuffer]);
+    const file = new File([blob], input.file_name, { type: input.mime_type });
+    const bucket = input.bucket ?? this.storageBucketId;
+
+    const created = await this.storage.createFile(bucket, ID.unique(), file);
+    const url = this.storage.getFileView(bucket, created.$id).toString();
+
+    return {
+      file_url: url,
+      file_name: input.file_name,
+      file_type: inferFileType(input.mime_type),
+      mime_type: input.mime_type,
+      file_size: blob.size,
+    };
   }
 
   private typingChannels = new Map<string, ReturnType<typeof setTimeout>>();

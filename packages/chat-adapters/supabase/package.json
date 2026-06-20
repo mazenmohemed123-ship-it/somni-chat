@@ -1,6 +1,6 @@
 {
   "name": "@somni/adapter-supabase",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Supabase adapter for Somni Chat Engine",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -12,7 +12,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",

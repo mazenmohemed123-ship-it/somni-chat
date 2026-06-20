@@ -1,9 +1,12 @@
 import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import type { ChatAdapter, PaginationOptions, MessageQueryOptions, PaginatedResult, UnsubscribeFn } from '@somni/chat-core';
+import type {
+  ChatAdapter, PaginationOptions, MessageQueryOptions, PaginatedResult, UnsubscribeFn,
+  UploadAttachmentInput, UploadAttachmentResult,
+} from '@somni/chat-core';
 import type {
   Conversation, CreateConversationInput, UpdateConversationInput,
   Participant, AddParticipantInput,
-  Message, SendMessageInput, EditMessageInput, Reaction,
+  Message, SendMessageInput, EditMessageInput, Reaction, Attachment,
   UserPresence, PresenceUpdate, TypingUpdate,
   ChatEvent,
 } from '@somni/chat-core';
@@ -11,6 +14,22 @@ import type {
 export interface SupabaseAdapterConfig {
   client: SupabaseClient;
   schema?: string;
+  /** Storage bucket for attachments (default: "chat-attachments") */
+  storageBucket?: string;
+}
+
+function inferFileType(mime: string): Attachment['file_type'] {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('application/') || mime.startsWith('text/')) return 'document';
+  return 'other';
+}
+
+function byteLength(file: Blob | ArrayBuffer | Uint8Array): number {
+  if (file instanceof Uint8Array) return file.byteLength;
+  if (file instanceof ArrayBuffer) return file.byteLength;
+  return file.size;
 }
 
 /**
@@ -22,9 +41,12 @@ export class SupabaseAdapter implements ChatAdapter {
   private readonly schema: string;
   private readonly channels = new Map<string, RealtimeChannel>();
 
+  private readonly storageBucket: string;
+
   constructor(config: SupabaseAdapterConfig) {
     this.db = config.client;
     this.schema = config.schema ?? 'public';
+    this.storageBucket = config.storageBucket ?? 'chat-attachments';
   }
 
   private table(name: string) {
@@ -314,6 +336,29 @@ export class SupabaseAdapter implements ChatAdapter {
       .eq('user_id', userId)
       .eq('emoji', emoji);
     if (error) throw new Error(`[Supabase] removeReaction: ${error.message}`);
+  }
+
+  // ─── Attachments ──────────────────────────────────────────────────────────
+
+  async uploadAttachment(input: UploadAttachmentInput): Promise<UploadAttachmentResult> {
+    const bucket = input.bucket ?? this.storageBucket;
+    const path = `${Date.now()}-${crypto.randomUUID()}-${input.file_name}`;
+
+    const { error } = await this.db.storage
+      .from(bucket)
+      .upload(path, input.file as Blob, { contentType: input.mime_type, upsert: false });
+
+    if (error) throw new Error(`[Supabase] uploadAttachment: ${error.message}`);
+
+    const { data: pub } = this.db.storage.from(bucket).getPublicUrl(path);
+
+    return {
+      file_url: pub.publicUrl,
+      file_name: input.file_name,
+      file_type: inferFileType(input.mime_type),
+      mime_type: input.mime_type,
+      file_size: byteLength(input.file),
+    };
   }
 
   // ─── Presence ─────────────────────────────────────────────────────────────

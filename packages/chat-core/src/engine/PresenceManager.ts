@@ -7,12 +7,22 @@ export class PresenceManager {
   private readonly unsubscribers: Array<() => void> = [];
   private presenceCache = new Map<string, UserPresence>();
 
+  private readonly adapter: ChatAdapter;
+  private readonly emitter: ChatEventEmitter;
+  private readonly userId: string;
+  private readonly intervalMs: number;
+
   constructor(
-    private readonly adapter: ChatAdapter,
-    private readonly emitter: ChatEventEmitter,
-    private readonly userId: string,
-    private readonly intervalMs: number
-  ) {}
+    adapter: ChatAdapter,
+    emitter: ChatEventEmitter,
+    userId: string,
+    intervalMs: number
+  ) {
+    this.adapter = adapter;
+    this.emitter = emitter;
+    this.userId = userId;
+    this.intervalMs = intervalMs;
+  }
 
   async start(): Promise<void> {
     await this.adapter.updatePresence({ user_id: this.userId, status: 'online' });
