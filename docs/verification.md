@@ -19,9 +19,11 @@ npm test
 النتيجة المتوقعة:
 
 ```
-chat-core  →  # pass 54   # fail 0
-chat-call  →  # pass 30   # fail 0
-الإجمالي  →  84 اختبار ناجح
+chat-core          →  # pass 54   # fail 0
+chat-call          →  # pass 30   # fail 0
+notifications      →  # pass 44   # fail 0
+analytics          →  # pass 48   # fail 0
+الإجمالي          →  176 اختبار ناجح
 ```
 
 ---
@@ -34,6 +36,12 @@ npm --workspace @somni/chat-core test
 
 # المكالمات الصوتية والفيديو (signaling, WebRTC, call state machine, e2e call)
 npm --workspace @somni/chat-call test
+
+# الإشعارات (FCM, APNs, Web Push, batching, rate limiting)
+npm --workspace @somni/notifications test
+
+# التحليلات (DAU, delivery rates, response times, snapshots)
+npm --workspace @somni/analytics test
 ```
 
 ---
@@ -55,9 +63,17 @@ ok 2 - callee rejecting ends the call on both sides
 ok 3 - audio-only call requests no video track
 ```
 
+مثلاً اختبار التجميع الذكي للإشعارات:
+
+```bash
+cd packages/chat-notifications
+node --experimental-strip-types --experimental-loader ./tests/loader.mjs \
+  --test tests/integration.test.ts
+```
+
 ---
 
-## 4) ماذا تغطّي الاختبارات (84 اختبار)؟
+## 4) ماذا تغطّي الاختبارات (176 اختبار)؟
 
 ### الشات (`chat-core` — 54)
 | الملف | يتأكد من |
@@ -81,6 +97,27 @@ ok 3 - audio-only call requests no video track
 | `webrtcProvider` | offer/answer/ICE، تجنّب التضارب (glare)، إغلاق الاتصالات |
 | `integration` | **مكالمة فيديو كاملة بين طرفين تتصل فعلاً** عبر WebRTC + signaling |
 
+### الإشعارات (`chat-notifications` — 44)
+| الملف | يتأكد من |
+|------|----------|
+| `batchQueue` | التجميع في نافذة زمنية، الحد الأقصى للحزمة، دمج المحادثة، طوارق المستخدمين المنفصلة، destroy |
+| `rateLimiter` | حد per-minute/per-hour/per-day، منفصل لكل مستخدم، reset/clear |
+| `notificationEngine` | التوجيه للـ provider الصحيح، أحداث queued/sent/failed/rate-limit/token:invalid، الـ destroy |
+| `fcmProvider` | send/sendBatch، معالجة الأخطاء، validateToken |
+| `webPushProvider` | 201/410/404/400، invalid JSON، custom parseSubscription، sendBatch |
+| `integration` | **full flow: queue → batch → provider → events**، collapse 10 رسائل → 1، multi-channel |
+
+### التحليلات (`chat-analytics` — 48)
+| الملف | يتأكد من |
+|------|----------|
+| `timeSeriesBuffer` | query في النافذة، استبعاد القديم، sum/count، prune، eviction عند الامتلاء |
+| `metricAggregator` | DAU فريد، delivery rate، response time p50/p95/p99، conversation stats، error count |
+| `analyticsEngine` | track → أحداث، provider forwarding، عزل خطأ provider، DAU/rates/errors، destroy |
+| `dau` | فريد per-day، message:sent يُحسب، تواريخ منفصلة، getCounters |
+| `deliveryRates` | 100%/0%، window filtering، windowStart/End |
+| `responseTime` | single sample، p99 < max، unmatched delivery، 5 مستقلة |
+| `integration` | **1000 رسالة → 50 مستخدم فريد**، multi-conversation، InMemoryProvider query |
+
 ---
 
 ## 5) كيف تختبره يدوياً في تطبيق حقيقي؟
@@ -92,7 +129,8 @@ ok 3 - audio-only call requests no video track
 2. افتح المتصفح على نافذتين (أو جهازين) بمستخدمَين مختلفَين.
 3. **الشات**: اكتب رسالة من نافذة → تظهر فوراً (optimistic) ثم تتأكد، وتصل للنافذة الثانية لحظياً، وتظهر "يكتب الآن…".
 4. **المكالمة**: اضغط زر الاتصال → النافذة الثانية يظهر لها "مكالمة واردة" → اقبلها → يبدأ الصوت/الفيديو.
-5. اقطع الإنترنت عن نافذة، أرسل رسالة → تبقى "pending"، ثم أعد الإنترنت → تُرسل تلقائياً بالترتيب.
+5. **الإشعارات**: أرسل رسائل متعددة في نفس المحادثة → لاحظ أنها تصل كإشعار واحد مجمّع.
+6. اقطع الإنترنت عن نافذة، أرسل رسالة → تبقى "pending"، ثم أعد الإنترنت → تُرسل تلقائياً بالترتيب.
 
 ---
 

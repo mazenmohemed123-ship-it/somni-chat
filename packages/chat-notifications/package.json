@@ -1,0 +1,29 @@
+{
+  "name": "@somni/notifications",
+  "version": "1.0.0",
+  "description": "Push notification engine for Somni Chat (FCM, APNs, Web Push) with smart batching",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --experimental-loader ./tests/loader.mjs --test tests/*.test.ts",
+    "test:watch": "node --experimental-strip-types --experimental-loader ./tests/loader.mjs --test --watch tests/*.test.ts",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "sideEffects": false
+}
