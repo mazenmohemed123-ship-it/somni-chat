@@ -23,7 +23,9 @@
       "types": "./dist/providers/daily.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -32,19 +34,35 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@somni/chat-core": "workspace:*"
+    "@somni/chat-core": "^1.0.0"
   },
   "peerDependencies": {
     "livekit-client": "^2.0.0",
+    "livekit-server-sdk": "^2.0.0",
     "@daily-co/daily-js": "^0.60.0"
   },
   "peerDependenciesMeta": {
-    "livekit-client": { "optional": true },
-    "@daily-co/daily-js": { "optional": true }
+    "livekit-client": {
+      "optional": true
+    },
+    "livekit-server-sdk": {
+      "optional": true
+    },
+    "@daily-co/daily-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "tsup": "^8.0.0",
     "typescript": "^5.4.0"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mazenmohemed123-ship-it/somni-chat.git",
+    "directory": "packages/chat-call"
+  }
 }

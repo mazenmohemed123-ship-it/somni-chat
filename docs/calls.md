@@ -80,6 +80,42 @@ const call = new CallEngine({
 await call.start(conversationId, 'video', { peers: groupMemberIds });
 ```
 
+### Minting LiveKit tokens on your server
+
+`getToken` must call your **server** — the API secret never reaches the browser.
+A ready-made helper ships with the package:
+
+```ts
+// app/api/livekit-token/route.ts (Next.js Route Handler)
+import { createLiveKitToken } from '@somni/chat-call/providers/livekit';
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const room = searchParams.get('room')!;
+  const identity = await getAuthedUserId(req); // your auth (e.g. SupabaseAuth)
+  const token = await createLiveKitToken({
+    apiKey: process.env.LIVEKIT_API_KEY!,
+    apiSecret: process.env.LIVEKIT_API_SECRET!,
+    room,
+    identity,
+  });
+  return new Response(token);
+}
+```
+
+Then on the client, `getToken` just fetches it:
+
+```ts
+new LiveKitCallProvider({
+  url: 'wss://your.livekit.cloud',
+  getToken: (room, id) => fetch(`/api/livekit-token?room=${room}&id=${id}`).then((r) => r.text()),
+});
+```
+
+> Needs `npm i livekit-server-sdk` on the server. The provider and token helper accept
+> an injected module (`livekitModule` / `serverSdkModule`) so they're fully testable
+> without a live LiveKit server.
+
 Daily works the same way via `@somni/chat-call/providers/daily` and
 `DailyCallProvider({ getRoomUrl })`.
 

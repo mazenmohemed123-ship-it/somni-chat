@@ -23,8 +23,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@somni/chat-core": "workspace:*",
-    "@somni/chat-react": "workspace:*"
+    "@somni/chat-core": "^1.0.0",
+    "@somni/chat-react": "^1.0.0"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
@@ -39,5 +39,14 @@
   },
   "sideEffects": [
     "./dist/styles.css"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mazenmohemed123-ship-it/somni-chat.git",
+    "directory": "packages/chat-ui"
+  }
 }

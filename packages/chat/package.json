@@ -50,7 +50,9 @@
       "types": "./dist/adapters/firebase.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -58,23 +60,43 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@somni/chat-core": "workspace:*"
+    "@somni/chat-core": "^1.0.0"
   },
   "peerDependencies": {
-    "@somni/adapter-appwrite": "workspace:*",
-    "@somni/adapter-firebase": "workspace:*",
-    "@somni/adapter-supabase": "workspace:*",
-    "@somni/chat-call": "workspace:*",
-    "@somni/chat-react": "workspace:*",
+    "@somni/adapter-appwrite": "^1.0.0",
+    "@somni/adapter-firebase": "^1.0.0",
+    "@somni/adapter-supabase": "^1.0.0",
+    "@somni/chat-call": "^1.0.0",
+    "@somni/chat-react": "^1.0.0",
     "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true },
-    "@somni/chat-react": { "optional": true },
-    "@somni/chat-call": { "optional": true },
-    "@somni/adapter-supabase": { "optional": true },
-    "@somni/adapter-appwrite": { "optional": true },
-    "@somni/adapter-firebase": { "optional": true }
+    "react": {
+      "optional": true
+    },
+    "@somni/chat-react": {
+      "optional": true
+    },
+    "@somni/chat-call": {
+      "optional": true
+    },
+    "@somni/adapter-supabase": {
+      "optional": true
+    },
+    "@somni/adapter-appwrite": {
+      "optional": true
+    },
+    "@somni/adapter-firebase": {
+      "optional": true
+    }
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mazenmohemed123-ship-it/somni-chat.git",
+    "directory": "packages/chat"
+  }
 }

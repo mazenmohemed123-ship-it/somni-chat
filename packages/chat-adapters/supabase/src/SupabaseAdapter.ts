@@ -16,6 +16,12 @@ export interface SupabaseAdapterConfig {
   schema?: string;
   /** Storage bucket for attachments (default: "chat-attachments") */
   storageBucket?: string;
+  /**
+   * When true (default), `connect()` verifies there is an authenticated
+   * Supabase session and that its user id matches the one passed to the engine,
+   * failing fast on misconfiguration. Set false for anonymous / custom-auth setups.
+   */
+  requireAuth?: boolean;
 }
 
 function inferFileType(mime: string): Attachment['file_type'] {
@@ -42,11 +48,14 @@ export class SupabaseAdapter implements ChatAdapter {
   private readonly channels = new Map<string, RealtimeChannel>();
 
   private readonly storageBucket: string;
+  private readonly requireAuth: boolean;
+  private readonly typingSenders = new Map<string, RealtimeChannel>();
 
   constructor(config: SupabaseAdapterConfig) {
     this.db = config.client;
     this.schema = config.schema ?? 'public';
     this.storageBucket = config.storageBucket ?? 'chat-attachments';
+    this.requireAuth = config.requireAuth ?? true;
   }
 
   private table(name: string) {
@@ -55,15 +64,37 @@ export class SupabaseAdapter implements ChatAdapter {
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
-  async connect(_userId: string): Promise<void> {
-    // Supabase connection is implicit via the client
+  /** Resolve the signed-in Supabase user's id (or null when anonymous). */
+  async getCurrentUserId(): Promise<string | null> {
+    const { data, error } = await this.db.auth.getUser();
+    if (error || !data?.user) return null;
+    return data.user.id;
+  }
+
+  async connect(userId: string): Promise<void> {
+    if (!this.requireAuth) return;
+    const authedId = await this.getCurrentUserId();
+    if (!authedId) {
+      throw new Error(
+        '[Supabase] connect: no authenticated session. Sign in first, or pass requireAuth:false.'
+      );
+    }
+    if (userId && authedId !== userId) {
+      throw new Error(
+        `[Supabase] connect: userId "${userId}" does not match the authenticated session "${authedId}".`
+      );
+    }
   }
 
   async disconnect(): Promise<void> {
     for (const [, channel] of this.channels) {
       await this.db.removeChannel(channel);
     }
+    for (const [, channel] of this.typingSenders) {
+      await this.db.removeChannel(channel);
+    }
     this.channels.clear();
+    this.typingSenders.clear();
   }
 
   // ─── Conversations ────────────────────────────────────────────────────────
@@ -404,7 +435,15 @@ export class SupabaseAdapter implements ChatAdapter {
   // ─── Typing ───────────────────────────────────────────────────────────────
 
   async updateTyping(update: TypingUpdate): Promise<void> {
-    const channel = this.db.channel(`typing:${update.conversation_id}`);
+    // Broadcasts require a subscribed channel. Reuse one sender per conversation
+    // instead of creating (and leaking) a fresh channel on every keystroke.
+    const key = `typing:${update.conversation_id}`;
+    let channel = this.typingSenders.get(key);
+    if (!channel) {
+      channel = this.db.channel(key, { config: { broadcast: { ack: false } } });
+      channel.subscribe();
+      this.typingSenders.set(key, channel);
+    }
     await channel.send({
       type: 'broadcast',
       event: 'typing',

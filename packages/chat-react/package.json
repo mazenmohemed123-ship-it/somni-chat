@@ -22,21 +22,32 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@somni/chat-core": "workspace:*"
+    "@somni/chat-core": "^1.0.0"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "@somni/chat-call": "workspace:*"
+    "@somni/chat-call": "^1.0.0"
   },
   "peerDependenciesMeta": {
-    "@somni/chat-call": { "optional": true }
+    "@somni/chat-call": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "@somni/chat-call": "workspace:*",
+    "@somni/chat-call": "^1.0.0",
     "@types/react": "^18.3.0",
     "react": "^18.3.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mazenmohemed123-ship-it/somni-chat.git",
+    "directory": "packages/chat-react"
+  }
 }

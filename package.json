@@ -13,7 +13,7 @@
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "npm --workspace @somni/chat-core test && npm --workspace @somni/chat-call test && npm --workspace @somni/notifications test && npm --workspace @somni/analytics test",
+    "test": "npm --workspace @somni/chat-core test && npm --workspace @somni/chat-call test && npm --workspace @somni/notifications test && npm --workspace @somni/analytics test && npm --workspace @somni/adapter-supabase test",
     "clean": "turbo run clean"
   },
   "devDependencies": {

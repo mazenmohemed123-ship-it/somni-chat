@@ -2,7 +2,7 @@
 
 > بنية تحتية شاملة للمراسلة الفورية — مثل WhatsApp / Discord / Slack / Intercom — لكنها مكتبة npm قابلة لإعادة الاستخدام في أي مشروع.
 
-**v1.0.0 — Production Hardened** · شات + مكالمات + إشعارات + تحليلات · **176 اختبار يمر** · exactly-once · offline-first · plugins
+**v1.0.0 — Production Hardened** · شات + مكالمات + إشعارات + تحليلات · **215 اختبار يمر** · exactly-once · offline-first · plugins
 
 ### 📚 التوثيق
 - [Quick Start (5 أسطر)](./docs/quickstart.md)
@@ -15,7 +15,7 @@
 
 ```bash
 # تشغيل كل الاختبارات (لا تحتاج أي تثبيت — Node 22+)
-npm test     # 176 passing (54 chat-core + 30 chat-call + 44 notifications + 48 analytics)
+npm test     # 215 passing (54 core + 44 call + 44 notifications + 48 analytics + 25 supabase)
 ```
 
 ---
@@ -204,6 +204,30 @@ function App() {
 | Supabase | `@somni/adapter-supabase` |
 | Appwrite | `@somni/adapter-appwrite` |
 | Firebase | `@somni/adapter-firebase` |
+
+### 🔐 Supabase + Auth integration
+
+الـ `SupabaseAdapter` يتكامل مع Supabase Auth مباشرة — يتحقق من الجلسة عند الاتصال،
+ويقرأ الـ userId من الجلسة الحالية، ويعيد الاتصال تلقائياً عند تسجيل الدخول/الخروج:
+
+```typescript
+import { createChat } from '@somni/chat-core';
+import { SupabaseAdapter, SupabaseAuth } from '@somni/adapter-supabase';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const auth = new SupabaseAuth(supabase);
+
+const userId = await auth.getCurrentUserId();   // من جلسة Supabase
+const chat = createChat({ adapter: new SupabaseAdapter({ client: supabase }), userId });
+await chat.connect();   // يتحقق أن الجلسة مطابقة (requireAuth افتراضياً true)
+
+// أعد الاتصال تلقائياً عند تغيّر الجلسة
+auth.onAuthStateChange(async ({ userId }) => {
+  if (userId) await chat.connect(userId);
+  else await chat.disconnect();
+});
+```
 
 ### كتابة Adapter مخصص
 
@@ -501,7 +525,9 @@ useCall(engine)      // state, localStream, remoteTracks, start, accept, hangup,
 | 📊 معدلات التسليم والقراءة | ✅ |
 | 📊 p50/p95/p99 زمن الاستجابة | ✅ |
 | 📊 Snapshots دورية | ✅ |
-| **176 اختبار آلي** | ✅ |
+| 🔐 Supabase Auth integration | ✅ |
+| 🎟️ LiveKit token server helper | ✅ |
+| **215 اختبار آلي** | ✅ |
 
 ---
 
@@ -571,5 +597,7 @@ packages/chat-adapters/supabase/migrations/001_somni_chat_schema.sql
 ```bash
 pnpm install
 pnpm build
-npm test          # 176 اختبار (54 + 30 + 44 + 48)
+npm test          # 215 اختبار (54 + 44 + 44 + 48 + 25)
 ```
+
+> 📦 **للنشر على npm:** راجع [docs/publishing.md](./docs/publishing.md) — دليل خطوة بخطوة للنشر اليدوي.

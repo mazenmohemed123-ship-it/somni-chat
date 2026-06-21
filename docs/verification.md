@@ -20,10 +20,11 @@ npm test
 
 ```
 chat-core          →  # pass 54   # fail 0
-chat-call          →  # pass 30   # fail 0
+chat-call          →  # pass 44   # fail 0
 notifications      →  # pass 44   # fail 0
 analytics          →  # pass 48   # fail 0
-الإجمالي          →  176 اختبار ناجح
+adapter-supabase   →  # pass 25   # fail 0
+الإجمالي          →  215 اختبار ناجح
 ```
 
 ---
@@ -42,6 +43,9 @@ npm --workspace @somni/notifications test
 
 # التحليلات (DAU, delivery rates, response times, snapshots)
 npm --workspace @somni/analytics test
+
+# Supabase adapter (الاستعلامات، الـ realtime، الـ auth، الـ typing)
+npm --workspace @somni/adapter-supabase test
 ```
 
 ---
@@ -73,7 +77,7 @@ node --experimental-strip-types --experimental-loader ./tests/loader.mjs \
 
 ---
 
-## 4) ماذا تغطّي الاختبارات (176 اختبار)؟
+## 4) ماذا تغطّي الاختبارات (215 اختبار)؟
 
 ### الشات (`chat-core` — 54)
 | الملف | يتأكد من |
@@ -95,7 +99,14 @@ node --experimental-strip-types --experimental-loader ./tests/loader.mjs \
 | `callEmitter` | البث وعزل الأخطاء |
 | `callEngineState` | كل انتقالات الحالة: ringing/incoming/connecting/connected/ended، رفض، إنهاء، timeout، كتم/كاميرا |
 | `webrtcProvider` | offer/answer/ICE، تجنّب التضارب (glare)، إغلاق الاتصالات |
+| `livekitProvider` | الاتصال بـ LiveKit، tracks، peers، mic/camera/screenshare، token minting |
 | `integration` | **مكالمة فيديو كاملة بين طرفين تتصل فعلاً** عبر WebRTC + signaling |
+
+### Supabase Adapter (`adapter-supabase` — 25)
+| الملف | يتأكد من |
+|------|----------|
+| `supabaseAdapter` | الاستعلامات الصحيحة (insert/update/select)، الـ pagination، الـ soft-delete، الـ realtime (message/presence/typing)، إصلاح تسريب الـ typing channel، الـ auth gating |
+| `supabaseAuth` | قراءة الـ userId من الجلسة، الـ access token، onAuthStateChange، sign-in/out |
 
 ### الإشعارات (`chat-notifications` — 44)
 | الملف | يتأكد من |
