@@ -6,7 +6,7 @@ export default defineConfig({
   splitting: true,
   sourcemap: true,
   clean: true,
-  external: ['react', 'react-dom'],
+  external: ['react', 'react-dom', '@somni/chat-call'],
   esbuildOptions(options) {
     options.jsx = 'automatic';
   },

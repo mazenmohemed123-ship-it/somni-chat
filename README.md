@@ -2,18 +2,20 @@
 
 > بنية تحتية شاملة للمراسلة الفورية — مثل WhatsApp / Discord / Slack / Intercom — لكنها مكتبة npm قابلة لإعادة الاستخدام في أي مشروع.
 
-**v1.0.0 — Production Hardened** · 54 اختبار يمر · تسليم exactly-once · offline-first · plugins
+**v1.0.0 — Production Hardened** · **شات + مكالمات صوت/فيديو** · 84 اختبار يمر · exactly-once · offline-first · plugins
 
 ### 📚 التوثيق
 - [Quick Start (5 أسطر)](./docs/quickstart.md)
 - [API Reference الكامل](./docs/api-reference.md)
+- [🎙️ المكالمات الصوتية والفيديو](./docs/calls.md)
 - [دليل كتابة Adapter](./docs/adapter-guide.md)
 - [أمثلة واقعية (marketplace / support / group / AI)](./docs/examples.md)
+- [✅ كيف تتأكد أن كل شيء شغّال](./docs/verification.md)
 - [Production Checklist + تقرير جاهزية npm](./docs/production-checklist.md)
 
 ```bash
-# تشغيل الاختبارات (لا تحتاج أي تثبيت — Node 22+)
-npm --workspace @somni/chat-core test     # 54 passing
+# تشغيل كل الاختبارات (لا تحتاج أي تثبيت — Node 22+)
+npm test     # 84 passing (54 chat-core + 30 chat-call)
 ```
 
 ---
@@ -30,8 +32,10 @@ npm --workspace @somni/chat-core test     # 54 passing
 
 ```
 packages/
+  chat/                   ← الحزمة الموحّدة @somni/chat (re-exports)
   chat-core/              ← المحرك الأساسي (TypeScript خالص)
-  chat-react/             ← React Hooks
+  chat-call/              ← 🎙️ المكالمات الصوتية والفيديو (WebRTC + LiveKit/Daily)
+  chat-react/             ← React Hooks (شات + مكالمات)
   chat-ui/                ← مكونات UI جاهزة
   chat-adapters/
     supabase/             ← Supabase Adapter
@@ -317,27 +321,71 @@ packages/chat-adapters/supabase/migrations/001_somni_chat_schema.sql
 | Multi-adapter | ✅ |
 | Tree-shakable | ✅ |
 | TypeScript 100% | ✅ |
+| 🎙️ مكالمات صوتية (WebRTC) | ✅ |
+| 🎥 مكالمات فيديو (WebRTC) | ✅ |
+| مكالمات جماعية SFU (LiveKit / Daily) | ✅ |
+| كتم/كاميرا/مشاركة شاشة | ✅ |
+| Signaling عبر أي backend | ✅ |
+| 84 اختبار آلي | ✅ |
 
 ---
 
-## التوسعات المستقبلية (بدون تغيير Core API)
+## 🎙️ المكالمات الصوتية والفيديو — `@somni/chat-call`
 
-- `@somni/plugin-voice` — مكالمات صوتية
-- `@somni/plugin-video` — مكالمات فيديو
-- `@somni/plugin-ai` — وكلاء ذكاء اصطناعي
-- `@somni/plugin-notifications` — إشعارات Push
-- `@somni/plugin-analytics` — تحليلات المحادثات
-- `@somni/adapter-postgres` — PostgreSQL مباشر
+موديول منفصل ومستقل، يعيد استخدام نفس المعمارية: محرك `CallEngine` رفيع +
+**providers قابلة للتبديل**. لا نعيد اختراع WebRTC — نستخدم مكتبات مثبتة:
+
+| الاحتياج | من ينفّذه |
+|----------|-----------|
+| حالة المكالمة + التوجيه + المشاركون | `CallEngine` |
+| ميديا P2P (1:1) | **WebRTC الأصلي** عبر `WebRTCCallProvider` |
+| مكالمات جماعية + TURN + توسّع | **LiveKit** / **Daily** عبر wrappers جاهزة |
+| نقل الـ signaling | الـ realtime الموجود عندك (Supabase/Appwrite/WS) |
+
+```ts
+import { CallEngine, WebRTCCallProvider, TransportSignaling } from '@somni/chat-call';
+
+const call = new CallEngine({
+  selfId: userId,
+  signaling: new TransportSignaling(myTransport, conversationId),
+  provider: new WebRTCCallProvider(),
+});
+
+await call.start(conversationId, 'video', { peers: [otherUserId] });
+call.on('call:incoming', () => call.accept());
+```
+
+التفاصيل الكاملة في [docs/calls.md](./docs/calls.md).
+
+---
+
+## التوسعات المستقبلية (خارطة طريق أقوى)
+
+**تم إنجازها في v1.0:** ✅ مكالمات صوت/فيديو · ✅ نظام Plugins · ✅ AI agents (عبر hooks)
+
+**القادم:**
+- 🌐 **E2E Encryption** — تشفير طرف-لطرف للرسائل والمكالمات (MLS / Signal protocol)
+- 📹 **تسجيل المكالمات والبث المباشر** (live streaming / RTMP egress)
+- 🧠 **AI مدمج**: ترجمة فورية، تلخيص محادثات، نسخ صوتي (transcription)، إشراف تلقائي (moderation)
+- 📨 **`@somni/notifications`** — إشعارات Push عبر FCM / APNs / Web Push مع تجميع ذكي
+- 📊 **`@somni/analytics`** — تحليلات فورية (DAU، زمن الاستجابة، معدلات التسليم)
+- 🗄️ **`@somni/adapter-postgres`** + adapters لـ MongoDB و Redis Streams و NATS
+- 🔄 **CRDT sync** — تحرير تعاوني وتاريخ رسائل غير متصل بدون تعارض
+- 🌍 **Edge-first** — تشغيل على Cloudflare Workers / Durable Objects للزمن المنخفض عالمياً
+- 🧩 **Marketplace للـ plugins** — نظام إضافات قابل للتركيب
+
+كل هذا **بدون تغيير Core API**.
 
 ---
 
 ## المتطلبات
 
-- Node.js >= 18
+- Node.js >= 22 (لتشغيل الاختبارات بدون تثبيت)
 - pnpm >= 8
 - TypeScript >= 5.4
 
 ```bash
 pnpm install
 pnpm build
+npm test          # 84 اختبار
 ```

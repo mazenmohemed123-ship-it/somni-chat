@@ -25,9 +25,14 @@
     "@somni/chat-core": "workspace:*"
   },
   "peerDependencies": {
-    "react": ">=18.0.0"
+    "react": ">=18.0.0",
+    "@somni/chat-call": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@somni/chat-call": { "optional": true }
   },
   "devDependencies": {
+    "@somni/chat-call": "workspace:*",
     "@types/react": "^18.3.0",
     "react": "^18.3.0",
     "tsup": "^8.0.0",

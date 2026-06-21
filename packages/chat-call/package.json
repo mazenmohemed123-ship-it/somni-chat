@@ -1,0 +1,50 @@
+{
+  "name": "@somni/chat-call",
+  "version": "1.0.0",
+  "description": "Voice & video calling for Somni Chat — WebRTC core with pluggable LiveKit/Daily/Agora providers",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./providers/livekit": {
+      "import": "./dist/providers/livekit.mjs",
+      "require": "./dist/providers/livekit.js",
+      "types": "./dist/providers/livekit.d.ts"
+    },
+    "./providers/daily": {
+      "import": "./dist/providers/daily.mjs",
+      "require": "./dist/providers/daily.js",
+      "types": "./dist/providers/daily.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --experimental-loader ./tests/loader.mjs --test tests/*.test.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@somni/chat-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "livekit-client": "^2.0.0",
+    "@daily-co/daily-js": "^0.60.0"
+  },
+  "peerDependenciesMeta": {
+    "livekit-client": { "optional": true },
+    "@daily-co/daily-js": { "optional": true }
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "sideEffects": false
+}

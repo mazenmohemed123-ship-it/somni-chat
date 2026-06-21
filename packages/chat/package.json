@@ -29,6 +29,11 @@
       "require": "./dist/react.js",
       "types": "./dist/react.d.ts"
     },
+    "./call": {
+      "import": "./dist/call.mjs",
+      "require": "./dist/call.js",
+      "types": "./dist/call.d.ts"
+    },
     "./adapters/supabase": {
       "import": "./dist/adapters/supabase.mjs",
       "require": "./dist/adapters/supabase.js",
@@ -59,12 +64,14 @@
     "@somni/adapter-appwrite": "workspace:*",
     "@somni/adapter-firebase": "workspace:*",
     "@somni/adapter-supabase": "workspace:*",
+    "@somni/chat-call": "workspace:*",
     "@somni/chat-react": "workspace:*",
     "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
     "react": { "optional": true },
     "@somni/chat-react": { "optional": true },
+    "@somni/chat-call": { "optional": true },
     "@somni/adapter-supabase": { "optional": true },
     "@somni/adapter-appwrite": { "optional": true },
     "@somni/adapter-firebase": { "optional": true }
