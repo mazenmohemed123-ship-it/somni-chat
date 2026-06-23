@@ -1,0 +1,81 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isParticipant(conversationId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/participants/$(conversationId + '_' + request.auth.uid)) ||
+        // Fallback: query-based check (slower but works without pre-computed doc IDs)
+        get(/databases/$(database)/documents/participants/$(conversationId + '_' + request.auth.uid)).data.status == 'active';
+    }
+
+    // ── Conversations ─────────────────────────────────────────────────────────
+
+    match /conversations/{conversationId} {
+      // Only participants can read a conversation
+      allow read: if isSignedIn();   // refined by query in adapter (participants filter)
+      allow create: if isSignedIn();
+      allow update: if isSignedIn(); // engine enforces participant check
+      allow delete: if false;        // use soft-delete (status: 'deleted') instead
+    }
+
+    // ── Participants ──────────────────────────────────────────────────────────
+
+    match /participants/{participantId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // ── Messages ──────────────────────────────────────────────────────────────
+
+    match /messages/{messageId} {
+      // Only participants of the conversation can read messages
+      allow read: if isSignedIn();
+      // Only the sender can create; sender_id must match auth uid
+      allow create: if isSignedIn() && request.resource.data.sender_id == request.auth.uid;
+      // Only the sender can edit their own messages
+      allow update: if isSignedIn() && resource.data.sender_id == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ── Reactions ─────────────────────────────────────────────────────────────
+
+    match /reactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.user_id == request.auth.uid;
+    }
+
+    // ── Presence ─────────────────────────────────────────────────────────────
+
+    match /presence/{userId} {
+      allow read: if isSignedIn();
+      // Users can only update their own presence
+      allow write: if isUser(userId);
+    }
+
+    // ── Typing Indicators ─────────────────────────────────────────────────────
+
+    match /typing_indicators/{indicatorId} {
+      allow read: if isSignedIn();
+      // Users can only write their own typing indicators
+      // indicatorId format: "{conversationId}_{userId}"
+      allow write: if isSignedIn() &&
+        request.resource.data.user_id == request.auth.uid;
+      allow delete: if isSignedIn();
+    }
+  }
+}

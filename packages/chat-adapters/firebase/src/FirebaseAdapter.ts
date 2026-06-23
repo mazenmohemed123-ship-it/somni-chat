@@ -16,8 +16,8 @@ import {
   orderBy,
   limit as firestoreLimit,
   onSnapshot,
-  serverTimestamp,
   setDoc,
+  startAfter,
 } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -63,13 +63,20 @@ function inferFileType(mime: string): Attachment['file_type'] {
 
 /**
  * Firebase/Firestore implementation of ChatAdapter.
- * Uses Firestore collections for persistence and onSnapshot for realtime.
+ *
+ * Fixes vs naive implementation:
+ *  - subscribeMessages skips the initial snapshot so only genuinely new messages
+ *    fire message:new (Firestore fires 'added' for ALL existing docs on first call).
+ *  - sendMessage includes sender_id from the stored userId set in connect().
+ *  - subscribeConversations filters to only conversations the user participates in.
+ *  - Typing uses per-conversation document IDs to avoid unbounded collection scans.
  */
 export class FirebaseAdapter implements ChatAdapter {
   private readonly fs: Firestore;
   private readonly storage: FirebaseStorage | undefined;
   private readonly storagePrefix: string;
   private readonly unsubscribers: Array<() => void> = [];
+  private currentUserId: string | null = null;
 
   constructor(config: FirebaseAdapterConfig) {
     this.fs = config.firestore;
@@ -104,15 +111,20 @@ export class FirebaseAdapter implements ChatAdapter {
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
-  async connect(_userId: string): Promise<void> {}
+  async connect(userId: string): Promise<void> {
+    this.currentUserId = userId;
+  }
+
   async disconnect(): Promise<void> {
     for (const unsub of this.unsubscribers) unsub();
     this.unsubscribers.length = 0;
+    this.currentUserId = null;
   }
 
   // ─── Conversations ────────────────────────────────────────────────────────
 
   async createConversation(input: CreateConversationInput): Promise<Conversation> {
+    const now = new Date().toISOString();
     const ref = await addDoc(this.col('conversations'), {
       type: input.type,
       title: input.title ?? null,
@@ -120,8 +132,8 @@ export class FirebaseAdapter implements ChatAdapter {
       avatar_url: input.avatar_url ?? null,
       status: 'active',
       metadata: input.metadata ?? {},
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
       last_message_at: null,
       last_message_preview: null,
       created_by: input.participant_ids[0] ?? '',
@@ -134,7 +146,7 @@ export class FirebaseAdapter implements ChatAdapter {
           user_id: uid,
           role: i === 0 ? 'owner' : 'member',
           status: 'active',
-          joined_at: new Date().toISOString(),
+          joined_at: now,
           last_read_at: null,
           last_read_message_id: null,
           notifications_muted: false,
@@ -155,14 +167,16 @@ export class FirebaseAdapter implements ChatAdapter {
 
   async listConversations(userId: string, opts?: PaginationOptions): Promise<PaginatedResult<Conversation>> {
     const lim = opts?.limit ?? 30;
+
+    // Fetch conversation IDs the user participates in
     const participantSnap = await getDocs(
       query(this.col('participants'), where('user_id', '==', userId), where('status', '==', 'active'))
     );
     const ids = participantSnap.docs.map((d) => d.data()['conversation_id'] as string);
     if (!ids.length) return { items: [], has_more: false, next_cursor: null };
 
-    // Firestore `in` query is limited to 30 items; chunk if needed
-    const chunks = [];
+    // Firestore 'in' is capped at 30 — chunk if needed
+    const chunks: string[][] = [];
     for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
 
     const items: Conversation[] = [];
@@ -173,7 +187,8 @@ export class FirebaseAdapter implements ChatAdapter {
       snap.forEach((d) => items.push({ id: d.id, ...d.data() } as Conversation));
     }
 
-    return { items: items.slice(0, lim), has_more: items.length >= lim, next_cursor: items[items.length - 1]?.last_message_at ?? null };
+    const page = items.slice(0, lim);
+    return { items: page, has_more: items.length >= lim, next_cursor: page[page.length - 1]?.last_message_at ?? null };
   }
 
   async updateConversation(id: string, input: UpdateConversationInput): Promise<Conversation> {
@@ -187,16 +202,34 @@ export class FirebaseAdapter implements ChatAdapter {
     await updateDoc(doc(this.fs, 'conversations', id), { status: 'deleted' });
   }
 
-  subscribeConversations(_userId: string, callback: (event: ChatEvent) => void): UnsubscribeFn {
-    const unsub = onSnapshot(this.col('conversations'), (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type === 'modified') {
-          callback({ type: 'conversation:updated', payload: { id: change.doc.id, ...change.doc.data() } as Conversation });
-        } else if (change.type === 'removed') {
-          callback({ type: 'conversation:deleted', payload: { id: change.doc.id } });
+  subscribeConversations(userId: string, callback: (event: ChatEvent) => void): UnsubscribeFn {
+    // Only watch conversations the user actually participates in
+    const participantQuery = query(
+      this.col('participants'),
+      where('user_id', '==', userId),
+      where('status', '==', 'active')
+    );
+
+    const unsub = onSnapshot(participantQuery, async (participantSnap) => {
+      const ids = participantSnap.docs.map((d) => d.data()['conversation_id'] as string);
+      if (!ids.length) return;
+
+      // Watch the first 30 conversations (Firestore 'in' limit)
+      const convUnsub = onSnapshot(
+        query(this.col('conversations'), where('__name__', 'in', ids.slice(0, 30))),
+        (snap) => {
+          snap.docChanges().forEach((change) => {
+            if (change.type === 'modified') {
+              callback({ type: 'conversation:updated', payload: { id: change.doc.id, ...change.doc.data() } as Conversation });
+            } else if (change.type === 'removed') {
+              callback({ type: 'conversation:deleted', payload: { id: change.doc.id } as never });
+            }
+          });
         }
-      });
+      );
+      this.unsubscribers.push(convUnsub);
     });
+
     this.unsubscribers.push(unsub);
     return unsub;
   }
@@ -204,17 +237,20 @@ export class FirebaseAdapter implements ChatAdapter {
   // ─── Participants ──────────────────────────────────────────────────────────
 
   async addParticipant(conversationId: string, input: AddParticipantInput): Promise<Participant> {
-    const ref = await addDoc(this.col('participants'), {
+    const now = new Date().toISOString();
+    const data: Participant = {
       conversation_id: conversationId,
       user_id: input.user_id,
       role: input.role ?? 'member',
       status: 'active',
-      joined_at: new Date().toISOString(),
+      joined_at: now,
+      last_read_at: null,
+      last_read_message_id: null,
       notifications_muted: false,
       metadata: {},
-    });
-    const snap = await getDoc(ref);
-    return snap.data() as Participant;
+    };
+    await addDoc(this.col('participants'), data);
+    return data;
   }
 
   async removeParticipant(conversationId: string, userId: string): Promise<void> {
@@ -235,7 +271,7 @@ export class FirebaseAdapter implements ChatAdapter {
     const snap = await getDocs(
       query(this.col('participants'), where('conversation_id', '==', conversationId), where('user_id', '==', userId))
     );
-    if (!snap.docs.length) throw new Error('Participant not found');
+    if (!snap.docs.length) throw new Error('[Firebase] Participant not found');
     await updateDoc(snap.docs[0]!.ref, { role });
     return { ...snap.docs[0]!.data(), role } as Participant;
   }
@@ -243,26 +279,38 @@ export class FirebaseAdapter implements ChatAdapter {
   // ─── Messages ─────────────────────────────────────────────────────────────
 
   async sendMessage(input: SendMessageInput): Promise<Message> {
-    const ref = await addDoc(this.col('messages'), {
+    if (!this.currentUserId) throw new Error('[Firebase] call connect() before sendMessage()');
+    const now = new Date().toISOString();
+
+    const data = {
       conversation_id: input.conversation_id,
+      sender_id: this.currentUserId,      // ← was missing in the original
       content: input.content,
       type: input.type ?? 'text',
       reply_to_id: input.reply_to_id ?? null,
+      reply_to_preview: null,
       client_id: input.client_id,
       status: 'sent',
-      created_at: new Date().toISOString(),
-      metadata: input.metadata ?? {},
+      created_at: now,
+      delivered_at: now,
+      read_at: null,
+      edited_at: null,
+      deleted_at: null,
       attachments: [],
       reactions: [],
-    });
+      metadata: input.metadata ?? {},
+    };
 
+    const ref = await addDoc(this.col('messages'), data);
+
+    // Update conversation summary
     await updateDoc(doc(this.fs, 'conversations', input.conversation_id), {
-      last_message_at: new Date().toISOString(),
-      last_message_preview: (input.content as string).slice(0, 100),
+      last_message_at: now,
+      last_message_preview: String(input.content).slice(0, 100),
+      updated_at: now,
     });
 
-    const snap = await getDoc(ref);
-    return { id: snap.id, ...snap.data() } as Message;
+    return { id: ref.id, ...data } as Message;
   }
 
   async editMessage(input: EditMessageInput): Promise<Message> {
@@ -286,20 +334,46 @@ export class FirebaseAdapter implements ChatAdapter {
     const lim = opts?.limit ?? 50;
     const constraints = [
       where('conversation_id', '==', conversationId),
+      where('deleted_at', '==', null),
       orderBy('created_at', 'desc'),
-      firestoreLimit(lim),
+      firestoreLimit(lim + 1), // fetch one extra to detect has_more
     ];
 
-    const snap = await getDocs(query(this.col('messages'), ...constraints));
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Message)).reverse();
+    if (opts?.cursor) {
+      const cursorDoc = await getDoc(doc(this.fs, 'messages', opts.cursor));
+      if (cursorDoc.exists()) constraints.push(startAfter(cursorDoc));
+    }
 
-    return { items, has_more: items.length === lim, next_cursor: items[0]?.created_at ?? null };
+    const snap = await getDocs(query(this.col('messages'), ...constraints));
+    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Message));
+    const hasMore = all.length > lim;
+    const items = all.slice(0, lim).reverse(); // chronological for display
+
+    return {
+      items,
+      has_more: hasMore,
+      next_cursor: hasMore ? all[lim - 1]?.id ?? null : null,
+    };
   }
 
   subscribeMessages(conversationId: string, callback: (event: ChatEvent) => void): UnsubscribeFn {
+    // Track whether the initial snapshot has been processed.
+    // Firestore fires 'added' for ALL existing documents on first call — we must
+    // skip those so we don't replay history as message:new events.
+    let initialSnapshotDone = false;
+
     const unsub = onSnapshot(
-      query(this.col('messages'), where('conversation_id', '==', conversationId), orderBy('created_at', 'desc'), firestoreLimit(50)),
+      query(
+        this.col('messages'),
+        where('conversation_id', '==', conversationId),
+        orderBy('created_at', 'asc'),
+        firestoreLimit(50)
+      ),
       (snap) => {
+        if (!initialSnapshotDone) {
+          initialSnapshotDone = true;
+          return; // skip the initial load — the caller uses listMessages() for history
+        }
         snap.docChanges().forEach((change) => {
           const msg = { id: change.doc.id, ...change.doc.data() } as Message;
           if (change.type === 'added') callback({ type: 'message:new', payload: msg });
@@ -311,18 +385,30 @@ export class FirebaseAdapter implements ChatAdapter {
     return unsub;
   }
 
+  // ─── Read Receipts ────────────────────────────────────────────────────────
+
   async markAsRead(conversationId: string, userId: string, messageId: string): Promise<void> {
     const snap = await getDocs(
       query(this.col('participants'), where('conversation_id', '==', conversationId), where('user_id', '==', userId))
     );
     if (snap.docs.length) {
-      await updateDoc(snap.docs[0]!.ref, { last_read_message_id: messageId, last_read_at: new Date().toISOString() });
+      await updateDoc(snap.docs[0]!.ref, {
+        last_read_message_id: messageId,
+        last_read_at: new Date().toISOString(),
+      });
     }
   }
 
+  // ─── Reactions ────────────────────────────────────────────────────────────
+
   async addReaction(messageId: string, userId: string, emoji: string): Promise<Reaction> {
     const id = `${messageId}_${userId}_${emoji}`;
-    const reaction: Reaction = { message_id: messageId, user_id: userId, emoji, created_at: new Date().toISOString() };
+    const reaction: Reaction = {
+      message_id: messageId,
+      user_id: userId,
+      emoji,
+      created_at: new Date().toISOString(),
+    };
     await setDoc(doc(this.fs, 'reactions', id), reaction);
     return reaction;
   }
@@ -330,6 +416,8 @@ export class FirebaseAdapter implements ChatAdapter {
   async removeReaction(messageId: string, userId: string, emoji: string): Promise<void> {
     await deleteDoc(doc(this.fs, 'reactions', `${messageId}_${userId}_${emoji}`));
   }
+
+  // ─── Presence ─────────────────────────────────────────────────────────────
 
   async updatePresence(update: PresenceUpdate): Promise<void> {
     await setDoc(doc(this.fs, 'presence', update.user_id), {
@@ -359,19 +447,31 @@ export class FirebaseAdapter implements ChatAdapter {
     return combined;
   }
 
+  // ─── Typing ───────────────────────────────────────────────────────────────
+  //
+  // We store a single document per (conversation, user) — no collection scans,
+  // no unbounded growth. Deletion = stopped typing; presence = actively typing.
+
   async updateTyping(update: TypingUpdate): Promise<void> {
     const ref = doc(this.fs, 'typing_indicators', `${update.conversation_id}_${update.user_id}`);
     if (update.is_typing) {
-      await setDoc(ref, { conversation_id: update.conversation_id, user_id: update.user_id, started_at: new Date().toISOString() });
+      await setDoc(ref, {
+        conversation_id: update.conversation_id,
+        user_id: update.user_id,
+        is_typing: true,
+        started_at: new Date().toISOString(),
+      });
     } else {
       await deleteDoc(ref);
     }
   }
 
   subscribeTyping(conversationId: string, callback: (event: ChatEvent) => void): UnsubscribeFn {
+    let initialDone = false;
     const unsub = onSnapshot(
       query(this.col('typing_indicators'), where('conversation_id', '==', conversationId)),
       (snap) => {
+        if (!initialDone) { initialDone = true; return; }
         snap.docChanges().forEach((change) => {
           const payload = change.doc.data();
           callback({
