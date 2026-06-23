@@ -231,6 +231,15 @@ export class MockAdapter implements ChatAdapter {
       })
     );
   }
+
+  emitPresence(userId: string, status: 'online' | 'offline' | 'away' | 'busy'): void {
+    this.presenceListeners.forEach((cb) =>
+      cb({
+        type: 'presence:updated',
+        payload: { user_id: userId, status, last_seen_at: new Date().toISOString(), device: null, metadata: {} },
+      })
+    );
+  }
 }
 
 export const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));

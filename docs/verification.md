@@ -19,12 +19,12 @@ npm test
 النتيجة المتوقعة:
 
 ```
-chat-core          →  # pass 54   # fail 0
+chat-core          →  # pass 91   # fail 0
 chat-call          →  # pass 44   # fail 0
 notifications      →  # pass 44   # fail 0
 analytics          →  # pass 48   # fail 0
 adapter-supabase   →  # pass 25   # fail 0
-الإجمالي          →  215 اختبار ناجح
+الإجمالي          →  252 اختبار ناجح
 ```
 
 ---
@@ -77,9 +77,9 @@ node --experimental-strip-types --experimental-loader ./tests/loader.mjs \
 
 ---
 
-## 4) ماذا تغطّي الاختبارات (215 اختبار)؟
+## 4) ماذا تغطّي الاختبارات (252 اختبار)؟
 
-### الشات (`chat-core` — 54)
+### الشات (`chat-core` — 91)
 | الملف | يتأكد من |
 |------|----------|
 | `deduplication` | عدم تكرار الرسائل + المصالحة + حدود الذاكرة |
@@ -91,8 +91,10 @@ node --experimental-strip-types --experimental-loader ./tests/loader.mjs \
 | `validateAdapter` | رفض أي adapter ناقص |
 | `engine.integration` | optimistic بدون تكرار + حظر plugin |
 | `stress` | **1000 رسالة فورية → صفر تكرار** |
+| `typing` | multi-conversation typing (الـ bug الأصلي + التحقق من الإصلاح)، stopTyping، getTypingUsers، self-filter، destroy |
+| `chatEngine` | connection lifecycle، conversation CRUD، message pagination، markAsRead، reactions، multi-subscriber fanout، subscribeConversations، presence، retryDeadLetter، plugin hooks، on() API |
 
-### المكالمات (`chat-call` — 30)
+### المكالمات (`chat-call` — 44)
 | الملف | يتأكد من |
 |------|----------|
 | `signaling` | توجيه الرسائل (موجّه/بث) + transport |

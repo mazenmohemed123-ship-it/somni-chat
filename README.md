@@ -2,7 +2,7 @@
 
 > بنية تحتية شاملة للمراسلة الفورية — مثل WhatsApp / Discord / Slack / Intercom — لكنها مكتبة npm قابلة لإعادة الاستخدام في أي مشروع.
 
-**v1.0.0 — Production Hardened** · شات + مكالمات + إشعارات + تحليلات · **215 اختبار يمر** · exactly-once · offline-first · plugins
+**v1.0.0 — Production Hardened** · شات + مكالمات + إشعارات + تحليلات · **252 اختبار يمر** · exactly-once · offline-first · plugins
 
 ### 📚 التوثيق
 - [Quick Start (5 أسطر)](./docs/quickstart.md)
@@ -15,7 +15,7 @@
 
 ```bash
 # تشغيل كل الاختبارات (لا تحتاج أي تثبيت — Node 22+)
-npm test     # 215 passing (54 core + 44 call + 44 notifications + 48 analytics + 25 supabase)
+npm test     # 252 passing (91 core + 44 call + 44 notifications + 48 analytics + 25 supabase)
 ```
 
 ---
@@ -185,7 +185,321 @@ function App() {
 
 ---
 
-## أنواع المحادثات
+## دمج Somni في مشروع قائم
+
+> هذا القسم يجيب على سؤال واحد: **لديّ مشروع يعمل فعلاً — كيف أضيف Somni بدون أن أكسر أي شيء؟**
+
+### المبدأ
+
+Somni لا يفرض عليك أي قاعدة بيانات أو إطار عمل. الطريقة الوحيدة التي يتحدث بها مع الـ backend هي عبر كائن `ChatAdapter` تمرره أنت. هذا يعني:
+
+- إذا كانت قاعدة بياناتك **Supabase** → استخدم `SupabaseAdapter` الجاهز.
+- إذا كانت قاعدة بياناتك **Appwrite** → استخدم `AppwriteAdapter` الجاهز.
+- إذا كانت لديك backend مخصصة (REST / WebSocket / tRPC / GraphQL Subscriptions) → اكتب `adapter` بسيط يلف طلباتك الموجودة. [راجع دليل الـ Adapter](./docs/adapter-guide.md).
+
+لا تحتاج لإعادة كتابة أي منطق موجود.
+
+---
+
+### سيناريو 1 — Next.js 14 (App Router) + Supabase
+
+**الخطوة 1: تثبيت الحزم**
+```bash
+npm install @somni/chat-core @somni/adapter-supabase @somni/chat-react
+```
+
+**الخطوة 2: تهيئة العميل في ملف منفصل**
+```typescript
+// lib/chat.ts
+import { createChat } from '@somni/chat-core';
+import { SupabaseAdapter, SupabaseAuth } from '@somni/adapter-supabase';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export const auth = new SupabaseAuth(supabase);
+
+export function createChatEngine(userId: string) {
+  return createChat({
+    adapter: new SupabaseAdapter({ client: supabase }),
+    userId,
+    offlineQueue: true,       // يخزّن الرسائل عند انقطاع الإنترنت
+    typingTimeoutMs: 3000,    // وقت انتهاء مؤشر الكتابة
+  });
+}
+```
+
+**الخطوة 3: مزوّد عام في `app/layout.tsx`**
+```tsx
+// app/layout.tsx
+'use client';
+import { useMemo, useEffect, useState } from 'react';
+import { ChatProvider } from '@somni/chat-react';
+import { createChatEngine, auth } from '@/lib/chat';
+
+export default function RootLayout({ children }) {
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // الحصول على userId من جلسة Supabase الحالية
+    auth.getCurrentUserId().then(setUserId);
+
+    // تحديث تلقائي عند تسجيل الدخول/الخروج
+    return auth.onAuthStateChange(({ userId }) => setUserId(userId ?? null));
+  }, []);
+
+  const engine = useMemo(
+    () => (userId ? createChatEngine(userId) : null),
+    [userId]
+  );
+
+  return (
+    <html>
+      <body>
+        {engine ? (
+          <ChatProvider engine={engine} autoConnect>
+            {children}
+          </ChatProvider>
+        ) : (
+          children
+        )}
+      </body>
+    </html>
+  );
+}
+```
+
+**الخطوة 4: استخدم Hooks في أي مكون**
+```tsx
+// components/ChatRoom.tsx
+'use client';
+import { useMessages, useSendMessage, useTyping } from '@somni/chat-react';
+
+export function ChatRoom({ conversationId }: { conversationId: string }) {
+  const { messages, isLoading } = useMessages({ conversationId });
+  const { sendMessage, isSending } = useSendMessage();
+  const { typingUserIds, notifyTyping } = useTyping(conversationId);
+
+  if (isLoading) return <div>جاري التحميل...</div>;
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id} style={{ opacity: m._optimistic ? 0.6 : 1 }}>
+          {m.content}
+          {m._optimistic && <span> ⏳</span>}
+        </div>
+      ))}
+      {typingUserIds.length > 0 && (
+        <div>{typingUserIds.join(', ')} يكتب...</div>
+      )}
+      <input
+        onKeyDown={async (e) => {
+          if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+            await sendMessage({
+              conversation_id: conversationId,
+              content: e.currentTarget.value.trim(),
+            });
+            e.currentTarget.value = '';
+          }
+        }}
+        onChange={() => notifyTyping()}
+        placeholder="اكتب رسالة..."
+      />
+    </div>
+  );
+}
+```
+
+**الخطوة 5: تشغيل migration قاعدة البيانات**
+```bash
+# انسخ الـ SQL في Supabase SQL Editor
+cat packages/chat-adapters/supabase/migrations/001_somni_chat_schema.sql
+```
+
+---
+
+### سيناريو 2 — React (Vite / CRA) + أي Backend
+
+إذا كان لديك backend مخصص (Node/Express/Rails/Django/...) مع WebSocket أو REST:
+
+**الخطوة 1: اكتب Adapter بسيط**
+```typescript
+// adapters/MyBackendAdapter.ts
+import type { ChatAdapter } from '@somni/chat-core';
+
+export class MyBackendAdapter implements ChatAdapter {
+  private ws: WebSocket | null = null;
+  private listeners = new Map<string, Set<Function>>();
+
+  async connect(userId: string) {
+    this.ws = new WebSocket(`wss://api.myapp.com/chat?user=${userId}`);
+  }
+
+  async disconnect() {
+    this.ws?.close();
+  }
+
+  async sendMessage(input) {
+    const res = await fetch('/api/messages', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return res.json(); // يجب أن يرجع كائن Message كامل
+  }
+
+  subscribeMessages(conversationId, callback) {
+    const handler = (event: MessageEvent) => {
+      const data = JSON.parse(event.data);
+      if (data.conversation_id === conversationId) {
+        callback({ type: 'message:new', payload: data });
+      }
+    };
+    this.ws?.addEventListener('message', handler);
+    return () => this.ws?.removeEventListener('message', handler);
+  }
+
+  // بقية الميثودز... (انظر docs/adapter-guide.md للقائمة الكاملة)
+  async createConversation(input) { /* ... */ }
+  async listConversations(userId, opts) { /* ... */ }
+  // ...
+}
+```
+
+**الخطوة 2: استخدمه مثل أي adapter آخر**
+```typescript
+import { createChat } from '@somni/chat-core';
+import { MyBackendAdapter } from './adapters/MyBackendAdapter';
+
+const chat = createChat({
+  adapter: new MyBackendAdapter(),
+  userId: currentUser.id,
+  offlineQueue: true,
+});
+
+await chat.connect();
+```
+
+---
+
+### سيناريو 3 — مشروع قائم فيه شات بدائي (migration)
+
+لديك شات مكتوب يدوياً بـ `fetch` + `setInterval`؟ إليك خطة الهجرة:
+
+**قبل (نمط شائع بدون Somni)**:
+```typescript
+// ❌ بدون exactly-once — تظهر الرسائل مرتين
+// ❌ بدون offline queue — الرسالة تُفقد عند انقطاع الإنترنت
+// ❌ بدون reconnect — المستخدم يفرّش الصفحة يدوياً
+
+async function sendMessage(text: string) {
+  const res = await fetch('/api/messages', { method: 'POST', body: JSON.stringify({ text }) });
+  const msg = await res.json();
+  setMessages(prev => [...prev, msg]); // تُضاف مرة من هنا
+  // وتُضاف مرة ثانية من WebSocket echo 👆 BUG!
+}
+```
+
+**بعد (مع Somni)**:
+```typescript
+// ✅ optimistic update فوري
+// ✅ deduplication تلقائي — لا تكرار حتى لو الـ echo وصل مرتين
+// ✅ offline queue — تُحفظ وتُرسل تلقائياً عند عودة الإنترنت
+
+const chat = createChat({ adapter: new MyAdapter(), userId, offlineQueue: true });
+await chat.connect();
+
+// استبدل الـ messages state الخاص بك بهذا:
+const messages: AnyMessage[] = [];
+chat.subscribeMessages(conversationId, (event) => {
+  if (event.type === 'message:new') {
+    // لا يصل هنا إلا مرة واحدة — dedup مضمون
+    messages.push(event.payload);
+    render();
+  } else if (event.type === 'message:updated') {
+    // optimistic → confirmed
+    const idx = messages.findIndex(m => m.client_id === event.payload.client_id);
+    if (idx >= 0) messages[idx] = event.payload;
+    render();
+  }
+});
+
+// الإرسال (يظهر فوراً + يُرسل في الخلفية)
+await chat.sendMessage({ conversation_id: conversationId, content: text });
+```
+
+---
+
+### سيناريو 4 — Node.js Backend (إشعارات + تحليلات)
+
+```typescript
+// server.ts
+import { NotificationEngine, FcmProvider } from '@somni/notifications';
+import { AnalyticsEngine, InMemoryProvider } from '@somni/analytics';
+
+// محرك الإشعارات (يُشغَّل على السيرفر)
+const notifications = new NotificationEngine({
+  batch: { windowMs: 2000, maxBatchSize: 50, collapseByConversation: true },
+  rateLimit: { maxPerUserPerMinute: 5, maxPerUserPerHour: 60, maxPerUserPerDay: 200 },
+});
+notifications.registerProvider(new FcmProvider({ httpClient: myFcmClient }));
+
+// محرك التحليلات
+const analytics = new AnalyticsEngine({
+  provider: new InMemoryProvider(),
+  snapshotIntervalMs: 60_000,
+});
+analytics.on('snapshot:ready', (e) => saveMetricsToDB(e.snapshot));
+
+// عند استقبال رسالة جديدة من أي مكان (webhook, queue, etc.)
+async function onNewMessage(msg: MyMessage) {
+  // أرسل إشعاراً للمستخدم المستقبِل (إذا كان في الخلفية)
+  if (!isUserOnline(msg.receiverId)) {
+    await notifications.send(
+      { userId: msg.receiverId, token: await getToken(msg.receiverId), channel: 'fcm' },
+      { title: `رسالة من ${msg.senderName}`, body: msg.content },
+      { conversationId: msg.conversationId, senderId: msg.senderId }
+    );
+  }
+
+  // سجّل في التحليلات
+  analytics.track({ type: 'message:sent', userId: msg.senderId, conversationId: msg.conversationId });
+}
+```
+
+---
+
+### أهم الـ APIs التي ستحتاجها
+
+```typescript
+// ─── الحالة ─────────────────────────────────────────────────
+chat.state           // 'idle' | 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+chat.isConnected     // boolean (shorthand)
+chat.userId          // string (يرمي خطأ إذا لم يُحدَّد بعد)
+
+// ─── الانتظار حتى الاتصال (مفيد للـ lazy init) ──────────────
+await chat.onceConnected()  // يُحلّ فوراً إذا كنا متصلين بالفعل
+
+// ─── التشخيص (Offline Queue) ────────────────────────────────
+chat.pendingCount                // عدد الرسائل في قائمة الانتظار
+chat.getDeadLetterMessages()     // الرسائل التي فشلت نهائياً
+chat.retryDeadLetter(id)         // إعادة محاولة رسالة dead-lettered
+
+// ─── Typing مع تتبع متعدد المحادثات ────────────────────────
+chat.getTypingUsers('conv-id')   // ['alice', 'bob'] — آني، بدون polling
+
+// ─── أحداث ──────────────────────────────────────────────────
+chat.on('error', (e) => {
+  if (e.payload.code === 'SEND_FAILED') showRetryButton();
+  if (e.payload.code === 'MESSAGE_DEAD_LETTERED') showPermanentError();
+});
+```
+
+---
 
 | النوع | الوصف |
 |-------|-------|
@@ -422,46 +736,73 @@ call.on('call:incoming', () => call.accept());
 ## API المحرك الكامل
 
 ```typescript
-// Conversations
+// ─── State ───────────────────────────────────────────────────
+chat.state           // 'idle' | 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+chat.isConnected     // boolean
+chat.userId          // string (throws if not set)
+await chat.onceConnected()  // Promise<void> — resolves when/if connected
+
+// ─── Lifecycle ────────────────────────────────────────────────
+await chat.connect(userId?)
+await chat.disconnect()
+await chat.destroy()         // disconnect + remove all listeners
+
+// ─── Conversations ────────────────────────────────────────────
 chat.createConversation({ type, title, participant_ids })
+chat.getConversation(id)
 chat.listConversations({ limit, cursor })
 chat.updateConversation(id, { title })
+chat.deleteConversation(id)
 chat.subscribeConversations(callback)
 
-// Messages
+// ─── Participants ─────────────────────────────────────────────
+chat.addParticipant(conversationId, { user_id, role })
+chat.removeParticipant(conversationId, userId)
+chat.listParticipants(conversationId)
+
+// ─── Messages ─────────────────────────────────────────────────
 chat.sendMessage({ conversation_id, content, reply_to_id })
 chat.editMessage({ message_id, content })
 chat.deleteMessage(messageId)
 chat.listMessages(conversationId, { limit, cursor })
 chat.subscribeMessages(conversationId, callback)
+chat.subscribe(conversationId, callback)    // messages + typing in one call
 chat.markAsRead(conversationId, messageId)
 
-// Reactions
+// ─── Reactions ────────────────────────────────────────────────
 chat.addReaction(messageId, emoji)
 chat.removeReaction(messageId, emoji)
 
-// Presence
+// ─── Attachments ──────────────────────────────────────────────
+chat.uploadAttachment({ file, file_name, mime_type })
+
+// ─── Presence ─────────────────────────────────────────────────
 chat.setPresenceStatus('online' | 'away' | 'busy' | 'offline')
 chat.fetchPresence(userIds)
 chat.subscribePresence(userIds)
 
-// Typing
-chat.notifyTyping(conversationId)
-chat.stopTyping(conversationId)
-chat.subscribeTyping(conversationId)
-chat.getTypingUsers(conversationId)
+// ─── Typing ───────────────────────────────────────────────────
+chat.notifyTyping(conversationId)     // call on every keystroke
+chat.stopTyping(conversationId)       // call on message send / blur
+chat.subscribeTyping(conversationId)  // opens realtime channel
+chat.getTypingUsers(conversationId)   // returns string[] instantly
 
-// Events
+// ─── Offline Queue Diagnostics ────────────────────────────────
+chat.pendingCount                     // messages waiting to be sent
+chat.getDeadLetterMessages()          // permanently failed messages
+chat.retryDeadLetter(id)              // re-queue a dead-lettered message
+
+// ─── Events ───────────────────────────────────────────────────
 chat.on('message:new', handler)
 chat.on('message:updated', handler)
 chat.on('presence:updated', handler)
 chat.on('typing:updated', handler)
+chat.on('conversation:updated', handler)
+chat.on('conversation:deleted', handler)
 chat.on('connection:connected', handler)
 chat.on('connection:disconnected', handler)
-
-// Lifecycle
-await chat.connect()
-await chat.disconnect()
+chat.on('connection:reconnecting', handler)
+chat.on('error', handler)             // SEND_FAILED | MESSAGE_DEAD_LETTERED
 ```
 
 ---
@@ -527,7 +868,10 @@ useCall(engine)      // state, localStream, remoteTracks, start, accept, hangup,
 | 📊 Snapshots دورية | ✅ |
 | 🔐 Supabase Auth integration | ✅ |
 | 🎟️ LiveKit token server helper | ✅ |
-| **215 اختبار آلي** | ✅ |
+| `isConnected` getter + `onceConnected()` helper | ✅ |
+| `pendingCount` + `getDeadLetterMessages()` + `retryDeadLetter()` | ✅ |
+| multi-conversation typing (per-conv state, no cross-talk) | ✅ |
+| **252 اختبار آلي** | ✅ |
 
 ---
 
@@ -597,7 +941,7 @@ packages/chat-adapters/supabase/migrations/001_somni_chat_schema.sql
 ```bash
 pnpm install
 pnpm build
-npm test          # 215 اختبار (54 + 44 + 44 + 48 + 25)
+npm test          # 252 اختبار (91 + 44 + 44 + 48 + 25)
 ```
 
 > 📦 **للنشر على npm:** راجع [docs/publishing.md](./docs/publishing.md) — دليل خطوة بخطوة للنشر اليدوي.

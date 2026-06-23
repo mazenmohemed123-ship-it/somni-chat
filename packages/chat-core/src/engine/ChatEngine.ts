@@ -109,6 +109,25 @@ export class ChatEngine {
     return this.connectionState;
   }
 
+  get isConnected(): boolean {
+    return this.connectionState === 'connected';
+  }
+
+  /**
+   * Returns a Promise that resolves the next time (or immediately, if already)
+   * the engine reaches `connected`. Useful for lazy consumers that need to wait
+   * for the connection before their first operation.
+   */
+  onceConnected(): Promise<void> {
+    if (this.connectionState === 'connected') return Promise.resolve();
+    return new Promise((resolve) => {
+      const off = this.events.on('connection:connected', () => {
+        off();
+        resolve();
+      });
+    });
+  }
+
   private get ctx(): PluginContext {
     return { userId: this.currentUserId ?? '' };
   }

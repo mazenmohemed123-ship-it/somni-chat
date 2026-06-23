@@ -4,8 +4,9 @@ import type { TypingIndicator } from '../types/presence';
 
 export class TypingManager {
   private readonly activeTypers = new Map<string, Map<string, ReturnType<typeof setTimeout>>>();
-  private sendTimer: ReturnType<typeof setTimeout> | null = null;
-  private isCurrentlyTyping = false;
+  // Per-conversation outbound typing state (one global boolean was wrong for multi-conversation)
+  private readonly sendTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly activeConversations = new Set<string>();
   private readonly unsubscribers = new Map<string, () => void>();
 
   private readonly adapter: ChatAdapter;
@@ -27,30 +28,30 @@ export class TypingManager {
 
   /** Call on every keystroke */
   async notifyTyping(conversationId: string): Promise<void> {
-    if (!this.isCurrentlyTyping) {
-      this.isCurrentlyTyping = true;
+    if (!this.activeConversations.has(conversationId)) {
+      this.activeConversations.add(conversationId);
       await this.adapter.updateTyping({ conversation_id: conversationId, user_id: this.userId, is_typing: true });
     }
 
-    if (this.sendTimer) clearTimeout(this.sendTimer);
-    this.sendTimer = setTimeout(() => {
-      this.isCurrentlyTyping = false;
-      void this.adapter.updateTyping({
-        conversation_id: conversationId,
-        user_id: this.userId,
-        is_typing: false,
-      });
+    const existing = this.sendTimers.get(conversationId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.activeConversations.delete(conversationId);
+      this.sendTimers.delete(conversationId);
+      void this.adapter.updateTyping({ conversation_id: conversationId, user_id: this.userId, is_typing: false });
     }, this.timeoutMs);
+    this.sendTimers.set(conversationId, timer);
   }
 
   /** Explicitly stop typing (e.g., on message send) */
   async stopTyping(conversationId: string): Promise<void> {
-    if (this.sendTimer) {
-      clearTimeout(this.sendTimer);
-      this.sendTimer = null;
+    const timer = this.sendTimers.get(conversationId);
+    if (timer) {
+      clearTimeout(timer);
+      this.sendTimers.delete(conversationId);
     }
-    if (this.isCurrentlyTyping) {
-      this.isCurrentlyTyping = false;
+    if (this.activeConversations.has(conversationId)) {
+      this.activeConversations.delete(conversationId);
       await this.adapter.updateTyping({ conversation_id: conversationId, user_id: this.userId, is_typing: false });
     }
   }
@@ -100,7 +101,9 @@ export class TypingManager {
   }
 
   destroy(): void {
-    if (this.sendTimer) clearTimeout(this.sendTimer);
+    for (const [, timer] of this.sendTimers) clearTimeout(timer);
+    this.sendTimers.clear();
+    this.activeConversations.clear();
     for (const [, timers] of this.activeTypers) {
       for (const [, t] of timers) clearTimeout(t);
     }
